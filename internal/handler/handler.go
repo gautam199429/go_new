@@ -82,13 +82,13 @@ func ParseGraphQLQuery(w http.ResponseWriter, r *http.Request) {
 		policyMap[typename][field] = true
 	}
 
-	data = traverseAndRedact(data, allFieldMap, policyMap, "")
+	data = traverseAndRedact(data["data"].(map[string]any), allFieldMap, policyMap, "")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	responseSuccess := map[string]any{
 		"status":   "success",
-		"data":     data["data"],
+		"data":     data,
 		"allfield": allFieldMap,
 		"message":  "Successfully parsed JSON",
 	}
