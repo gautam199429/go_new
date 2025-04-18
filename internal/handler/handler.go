@@ -3,7 +3,6 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"regexp"
 	"strings"
@@ -82,7 +81,7 @@ func ParseGraphQLQuery(w http.ResponseWriter, r *http.Request) {
 		policyMap[typename][field] = true
 	}
 
-	data = traverseAndRedact(data["data"].(map[string]any), allFieldMap, policyMap, "")
+	data = traverseAndRedact(data["data"].(map[string]any), allFieldMap, policyMap, "", "")
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -108,16 +107,26 @@ func normalizeTypeName(name string) string {
 	return re.ReplaceAllString(name, "")
 }
 
-func traverseAndRedact(jsonMap map[string]interface{}, fieldMap map[string]string, policyMap map[string]map[string]any, typename string) map[string]interface{} {
+func traverseAndRedact(jsonMap map[string]interface{}, fieldMap map[string]string, policyMap map[string]map[string]any, typename string, refid string) map[string]interface{} {
 	for key, value := range jsonMap {
 
 		if typename != "" {
 			normalizedType := normalizeTypeName(typename)
-
+			if normalizeTypeName(typename) == "Account" {
+				refIdVal, ok := jsonMap["accountReferenceId"].(string)
+				if ok {
+					refid = refIdVal
+				}
+			}
+			if normalizeTypeName(typename) == "Card" {
+				refIdVal, ok := jsonMap["cardReferenceId"].(string)
+				if ok {
+					refid = refIdVal
+				}
+			}
 			if policyMap[normalizedType] != nil && policyMap[normalizedType][key] == true {
-				fmt.Println(jsonMap["accountReferenceId"])
 				engineResponse := policyMap[normalizedType]["engineResonse"].(map[string]string)
-				if !processEngineResonse(normalizedType, engineResponse, jsonMap) {
+				if !processEngineResonse(engineResponse, refid) {
 					delete(jsonMap, key)
 				}
 				continue
@@ -126,11 +135,11 @@ func traverseAndRedact(jsonMap map[string]interface{}, fieldMap map[string]strin
 
 		switch v := value.(type) {
 		case map[string]interface{}:
-			jsonMap[key] = traverseAndRedact(v, fieldMap, policyMap, fieldMap[key])
+			jsonMap[key] = traverseAndRedact(v, fieldMap, policyMap, fieldMap[key], refid)
 		case []interface{}:
 			for i, item := range v {
 				if obj, ok := item.(map[string]interface{}); ok {
-					v[i] = traverseAndRedact(obj, fieldMap, policyMap, fieldMap[key])
+					v[i] = traverseAndRedact(obj, fieldMap, policyMap, fieldMap[key], refid)
 				}
 			}
 			jsonMap[key] = v
@@ -159,8 +168,10 @@ func getEngineResponseBasedOnPolicy(policy string) (map[string]string, error) {
 			"card456": "DENY",
 		},
 		"AvailableCreditAmount.availableSpendingCreditAmount": {
-			"acc123": "ALLOW",
-			"acc456": "DENY",
+			"acc123":  "ALLOW",
+			"acc456":  "DENY",
+			"card123": "DENY",
+			"card456": "ALLOW",
 		},
 	}
 
@@ -170,26 +181,13 @@ func getEngineResponseBasedOnPolicy(policy string) (map[string]string, error) {
 	return nil, errors.New("no engine response found for policy: " + policy)
 }
 
-func processEngineResonse(normalizedTypeName string, engineResonse map[string]string, jsonMap map[string]interface{}) bool {
-	if normalizedTypeName == "Account" {
-		valueInEngineResponse := engineResonse[jsonMap["accountReferenceId"].(string)]
-		if valueInEngineResponse == "ALLOW" {
-			return true
-		} else if valueInEngineResponse == "DENY" {
-			return false
-		} else {
-			return false
-		}
+func processEngineResonse(engineResonse map[string]string, refids string) bool {
+	valueInEngineResponse := engineResonse[refids]
+	if valueInEngineResponse == "ALLOW" {
+		return true
+	} else if valueInEngineResponse == "DENY" {
+		return false
+	} else {
+		return false
 	}
-	if normalizedTypeName == "Card" {
-		valueInEngineResponse := engineResonse[jsonMap["cardReferenceId"].(string)]
-		if valueInEngineResponse == "ALLOW" {
-			return true
-		} else if valueInEngineResponse == "DENY" {
-			return false
-		} else {
-			return false
-		}
-	}
-	return false
 }
