@@ -45,17 +45,13 @@ func ParseSchema() (FieldsMap, AllEntitlement, error) {
 func ExtractEntitlementIdentifiers(sdl string) (AllEntitlement, error) {
 	result := make(AllEntitlement)
 
-	// Regular expression to match full policy object
-	re := regexp.MustCompile(`key:\s*"([^"]+)"(?:[^}]+)?(?:node:\s*{\s*entitlementIdentifier:\s*"([^"]+)")?`)
+	regex := regexp.MustCompile(`(?s)key:\s*"(.*?)".*?entitlementIdentifier:\s*"(.*?)"`)
 
-	matches := re.FindAllStringSubmatch(sdl, -1)
+	matches := regex.FindAllStringSubmatch(sdl, -1)
 	for _, match := range matches {
 		key := match[1]
-		entitlement := ""
-		if len(match) > 2 {
-			entitlement = match[2] // might still be empty if node not present
-		}
-		result[key] = entitlement
+		entitlementIdentifier := match[2]
+		result[key] = entitlementIdentifier
 	}
 
 	return result, nil

@@ -207,22 +207,22 @@ func processEngineResonse(engineResonse map[string]string, refids string) bool {
 	}
 }
 
-func findReferenceID(data map[string]interface{}) string {
+func findReferenceID(data map[string]interface{}, keyField string) string {
 	for key, value := range data {
-		if key == "accountReferenceId" {
+		if key == keyField {
 			if str, ok := value.(string); ok {
 				return str
 			}
 		}
 		if nestedMap, ok := value.(map[string]interface{}); ok {
-			if ref := findReferenceID(nestedMap); ref != "" {
+			if ref := findReferenceID(nestedMap, keyField); ref != "" {
 				return ref
 			}
 		}
 		if array, ok := value.([]interface{}); ok {
 			for _, item := range array {
 				if itemMap, ok := item.(map[string]interface{}); ok {
-					if ref := findReferenceID(itemMap); ref != "" {
+					if ref := findReferenceID(itemMap, keyField); ref != "" {
 						return ref
 					}
 				}
@@ -237,7 +237,7 @@ func traverseAndRedactCopy(jsonMap map[string]interface{}, fieldMap map[string]s
 		if typename != "" {
 			normalizedType := normalizeTypeName(typename)
 			if normalizeTypeName(typename) == "Account" {
-				if tempRefid := findReferenceID(jsonMap); tempRefid != "" {
+				if tempRefid := findReferenceID(jsonMap, policyMap[normalizedType]["policyEntitlement"].(string)); tempRefid != "" {
 					refid = tempRefid
 				}
 			}
@@ -254,7 +254,7 @@ func traverseAndRedactCopy(jsonMap map[string]interface{}, fieldMap map[string]s
 					var filtered []interface{}
 					for _, obj := range accounValue {
 						if m, ok := obj.(map[string]interface{}); ok {
-							refid = findReferenceID(m)
+							refid = findReferenceID(m, policyMap[normalizedType]["policyEntitlement"].(string))
 							//refid, _ := m["accountReferenceId"].(string)
 							if processEngineResonse(engineResponse, refid) {
 								filtered = append(filtered, m)
@@ -347,6 +347,7 @@ func ParseGraphQLQueryCopy(w http.ResponseWriter, r *http.Request) {
 			respondWithError(w, http.StatusBadRequest, "Error getting engine response: "+error.Error())
 			return
 		}
+		policyMap[typename]["policyEntitlement"] = allentitlement[policy]
 		policyMap[typename]["engineResonse"] = engineResponse
 		policyMap[typename][field] = true
 	}
