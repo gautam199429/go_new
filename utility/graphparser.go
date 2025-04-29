@@ -3,23 +3,30 @@ package utility
 import (
 	"os"
 
+	"regexp"
+
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 )
 
 type FieldsMap map[string]string
 
-func ParseSchema() (FieldsMap, error) {
+type AllEntitlement map[string]string
+
+func ParseSchema() (FieldsMap, AllEntitlement, error) {
 	schemaFilePath := "../schema.graphql"
 	body, err := os.ReadFile(schemaFilePath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	doc, err := gqlparser.LoadSchema(&ast.Source{Input: string(body)})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
+	mapping, err := ExtractEntitlementIdentifiers(string(body))
+	if err != nil {
+		return nil, nil, err
+	}
 	allFieldMap := make(FieldsMap)
 	for typeName, def := range doc.Types {
 		if validateString(typeName) && len(def.Fields) > 0 {
@@ -32,5 +39,24 @@ func ParseSchema() (FieldsMap, error) {
 			}
 		}
 	}
-	return allFieldMap, nil
+	return allFieldMap, mapping, nil
+}
+
+func ExtractEntitlementIdentifiers(sdl string) (AllEntitlement, error) {
+	result := make(AllEntitlement)
+
+	// Regular expression to match full policy object
+	re := regexp.MustCompile(`key:\s*"([^"]+)"(?:[^}]+)?(?:node:\s*{\s*entitlementIdentifier:\s*"([^"]+)")?`)
+
+	matches := re.FindAllStringSubmatch(sdl, -1)
+	for _, match := range matches {
+		key := match[1]
+		entitlement := ""
+		if len(match) > 2 {
+			entitlement = match[2] // might still be empty if node not present
+		}
+		result[key] = entitlement
+	}
+
+	return result, nil
 }
