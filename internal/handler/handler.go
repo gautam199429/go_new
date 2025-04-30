@@ -303,7 +303,6 @@ func ParseGraphQLQueryCopy(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Request body cannot be empty")
 		return
 	}
-
 	allFieldMap, allentitlement, err := utility.ParseSchema()
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error parsing schema: "+err.Error())
@@ -339,17 +338,17 @@ func ParseGraphQLQueryCopy(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if policyMap[typename] == nil {
-			policyMap[typename] = make(map[string]any)
+		if policyMap[policy] == nil {
+			policyMap[policy] = make(map[string]any)
 		}
 		engineResponse, error := getEngineResponseBasedOnPolicy(policy)
 		if error != nil {
 			respondWithError(w, http.StatusBadRequest, "Error getting engine response: "+error.Error())
 			return
 		}
-		policyMap[typename]["policyEntitlement"] = allentitlement[policy]
-		policyMap[typename]["engineResonse"] = engineResponse
-		policyMap[typename][field] = true
+		policyMap[policy]["entilementFileds"] = allentitlement[policy]
+		policyMap[policy]["engineResonse"] = engineResponse
+		policyMap[policy][field] = true
 	}
 
 	if len(policyMap) != 0 {

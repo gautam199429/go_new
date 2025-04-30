@@ -23,10 +23,7 @@ func ParseSchema() (FieldsMap, AllEntitlement, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	mapping, err := ExtractEntitlementIdentifiers(string(body))
-	if err != nil {
-		return nil, nil, err
-	}
+	allentitlement, err := ExtractEntitlementIdentifiers(string(body))
 	allFieldMap := make(FieldsMap)
 	for typeName, def := range doc.Types {
 		if validateString(typeName) && len(def.Fields) > 0 {
@@ -39,13 +36,13 @@ func ParseSchema() (FieldsMap, AllEntitlement, error) {
 			}
 		}
 	}
-	return allFieldMap, mapping, nil
+	return allFieldMap, allentitlement, nil
 }
 
 func ExtractEntitlementIdentifiers(sdl string) (AllEntitlement, error) {
 	result := make(AllEntitlement)
 
-	regex := regexp.MustCompile(`(?s)key:\s*"(.*?)".*?entitlementIdentifier:\s*"(.*?)"`)
+	regex := regexp.MustCompile(`(?s){\s*key:\s*"(.*?)".*?node:\s*{\s*entitlementIdentifier:\s*"(.*?)"\s*}`)
 
 	matches := regex.FindAllStringSubmatch(sdl, -1)
 	for _, match := range matches {
