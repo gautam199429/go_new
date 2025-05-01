@@ -2,8 +2,8 @@ package utility
 
 import (
 	"os"
-
 	"regexp"
+	"strings"
 
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -11,9 +11,11 @@ import (
 
 type FieldsMap map[string]string
 
-type AllEntitlement map[string]string
+type EntitlementIdMap map[string]string
 
-func ParseSchema() (FieldsMap, AllEntitlement, error) {
+var parsedSchema *ast.Schema // global cache to be reused if needed
+
+func ParseSchema() (FieldsMap, EntitlementIdMap, error) {
 	schemaFilePath := "../schema.graphql"
 	body, err := os.ReadFile(schemaFilePath)
 	if err != nil {
@@ -23,7 +25,14 @@ func ParseSchema() (FieldsMap, AllEntitlement, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	allentitlement, err := ExtractEntitlementIdentifiers(string(body))
+
+	parsedSchema = doc
+
+	entitlementIdMap, err := ExtractEntitlementIdentifiers(string(body))
+	if err != nil {
+		return nil, nil, err
+	}
+
 	allFieldMap := make(FieldsMap)
 	for typeName, def := range doc.Types {
 		if validateString(typeName) && len(def.Fields) > 0 {
@@ -36,15 +45,15 @@ func ParseSchema() (FieldsMap, AllEntitlement, error) {
 			}
 		}
 	}
-	return allFieldMap, allentitlement, nil
+	return allFieldMap, entitlementIdMap, nil
 }
 
-func ExtractEntitlementIdentifiers(sdl string) (AllEntitlement, error) {
-	result := make(AllEntitlement)
+func ExtractEntitlementIdentifiers(schema string) (EntitlementIdMap, error) {
+	result := make(EntitlementIdMap)
 
-	regex := regexp.MustCompile(`(?s){\s*key:\s*"(.*?)".*?node:\s*{\s*entitlementIdentifier:\s*"(.*?)"\s*}`)
+	regex := regexp.MustCompile(`key:\s*"(.*?)"(?:[^{}]|{[^{}]*})*?node:\s*{\s*entitlementIdentifier:\s*"(.*?)"`)
 
-	matches := regex.FindAllStringSubmatch(sdl, -1)
+	matches := regex.FindAllStringSubmatch(schema, -1)
 	for _, match := range matches {
 		key := match[1]
 		entitlementIdentifier := match[2]
@@ -52,4 +61,32 @@ func ExtractEntitlementIdentifiers(sdl string) (AllEntitlement, error) {
 	}
 
 	return result, nil
+}
+
+func ResolveRefIdNameFallback(policyKey string, entitlementIdMap EntitlementIdMap) string {
+	// Priority 1: check entitlementIdMap
+	if ref, ok := entitlementIdMap[policyKey]; ok && ref != "" {
+		return ref
+	}
+
+	// Priority 2: check @key directive in parsedSchema
+	parts := strings.Split(policyKey, ".")
+	if len(parts) != 2 || parsedSchema == nil {
+		return ""
+	}
+	typename := parts[0]
+
+	if typeDef, ok := parsedSchema.Types[typename]; ok {
+		for _, dir := range typeDef.Directives {
+			if dir.Name == "key" {
+				for _, arg := range dir.Arguments {
+					if arg.Name == "fields" {
+						return arg.Value.Raw
+					}
+				}
+			}
+		}
+	}
+
+	return ""
 }

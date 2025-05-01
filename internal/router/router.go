@@ -14,6 +14,8 @@ func NewRouter() *mux.Router {
 
 	r.HandleFunc("/parse-graphql/copy", handler.ParseGraphQLQueryCopy).Methods("POST")
 
+	r.HandleFunc("/parse-graphql/test", handler.GetApolloPoliciesRequired).Methods("GET")
+
 	return r
 
 }
