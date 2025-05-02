@@ -296,12 +296,6 @@ func traverseAndRedactCopy(jsonMap map[string]interface{}, fieldMap map[string]s
 }
 
 func ParseGraphQLQueryCopy(w http.ResponseWriter, r *http.Request) {
-	authHeader := r.Header.Get("Policies")
-	if authHeader == "" {
-		respondWithError(w, http.StatusBadRequest, "Missing Policies header")
-		return
-	}
-
 	body, err := io.ReadAll(r.Body)
 	defer r.Body.Close()
 	if err != nil {
@@ -320,12 +314,15 @@ func ParseGraphQLQueryCopy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	policiesList := splitPoliciesAndRemoveSpace(authHeader, ",")
+	policiesList, err := GetApolloPoliciesRequiredHeders()
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error Getting Policies schema: "+err.Error())
+		return
+	}
 	if len(policiesList) == 0 {
 		respondWithError(w, http.StatusBadRequest, "No valid policies provided")
 		return
 	}
-
 	var data JSONMap
 	err = json.Unmarshal([]byte(apiRequestBody), &data)
 	if err != nil {
@@ -333,8 +330,9 @@ func ParseGraphQLQueryCopy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	policyMap := make(map[string]map[string]map[string]string)
+
 	for _, policy := range policiesList {
-		parts := splitPoliciesAndRemoveSpace(policy, ".")
+		parts := splitPoliciesAndRemoveSpace(policy["key"].(string), ".")
 		if len(parts) != 2 {
 			respondWithError(w, http.StatusBadRequest, "Invalid policy format")
 			return
@@ -349,7 +347,7 @@ func ParseGraphQLQueryCopy(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		engineResponse, error := getEngineResponseBasedOnPolicy(policy)
+		engineResponse, error := getEngineResponseBasedOnPolicy(policy["key"].(string))
 		if error != nil {
 			respondWithError(w, http.StatusBadRequest, "Error getting engine response: "+error.Error())
 			return
@@ -358,7 +356,17 @@ func ParseGraphQLQueryCopy(w http.ResponseWriter, r *http.Request) {
 		if _, ok := policyMap[typename]; !ok {
 			policyMap[typename] = make(map[string]map[string]string)
 		}
-
+		node, ok := policy["node"].(map[string]any)
+		if !ok {
+			respondWithError(w, http.StatusBadRequest, "No node found in policy")
+			return
+		}
+		entitlementVal, ok := node["entitlementIdentifier"].(string)
+		if !ok {
+			respondWithError(w, http.StatusBadRequest, "No entitlementIdentifier found in node")
+			return
+		}
+		policyMap[typename]["entitlementIdentifier"] = map[string]string{"value": entitlementVal}
 		policyMap[typename][field] = engineResponse
 	}
 
@@ -378,7 +386,7 @@ func ParseGraphQLQueryCopy(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(responseSuccess)
 }
 
-func GetApolloPoliciesRequired(w http.ResponseWriter, r *http.Request) {
+func GetApolloPoliciesRequiredHeders() ([]map[string]interface{}, error) {
 	jsonData := `
 	{
 	"version": 1,
@@ -426,8 +434,7 @@ func GetApolloPoliciesRequired(w http.ResponseWriter, r *http.Request) {
 	var result map[string]interface{}
 	if err := json.Unmarshal([]byte(jsonData), &result); err != nil {
 		fmt.Println("Error unmarshalling JSON:", err)
-		respondWithError(w, http.StatusBadRequest, "Error getting engine response: ")
-		return
+		return nil, err
 	}
 
 	keys := []map[string]interface{}{}
@@ -443,12 +450,5 @@ func GetApolloPoliciesRequired(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	responseSuccess := map[string]any{
-		"status":  "success",
-		"data":    keys,
-		"message": "Successfully parsed JSON",
-	}
-	_ = json.NewEncoder(w).Encode(responseSuccess)
+	return keys, nil
 }
