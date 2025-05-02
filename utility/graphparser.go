@@ -3,7 +3,6 @@ package utility
 import (
 	"os"
 	"regexp"
-	"strings"
 
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -63,20 +62,9 @@ func ExtractEntitlementIdentifiers(schema string) (EntitlementIdMap, error) {
 	return result, nil
 }
 
-func ResolveRefIdNameFallback(policyKey string, entitlementIdMap EntitlementIdMap) string {
-	// Priority 1: check entitlementIdMap
-	if ref, ok := entitlementIdMap[policyKey]; ok && ref != "" {
-		return ref
-	}
+func ResolveRefIdNameFallback(typeName string) string {
 
-	// Priority 2: check @key directive in parsedSchema
-	parts := strings.Split(policyKey, ".")
-	if len(parts) != 2 || parsedSchema == nil {
-		return ""
-	}
-	typename := parts[0]
-
-	if typeDef, ok := parsedSchema.Types[typename]; ok {
+	if typeDef, ok := parsedSchema.Types[typeName]; ok {
 		for _, dir := range typeDef.Directives {
 			if dir.Name == "key" {
 				for _, arg := range dir.Arguments {

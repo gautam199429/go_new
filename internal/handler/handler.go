@@ -236,12 +236,17 @@ func findReferenceID(data map[string]interface{}, refIdName string) string {
 	return ""
 }
 
-func traverseAndRedactCopy(jsonMap map[string]interface{}, fieldMap map[string]string, policyMap map[string]map[string]map[string]string, entitlementIdMap map[string]string, typename string, refid string) map[string]interface{} {
+func traverseAndRedactCopy(jsonMap map[string]interface{}, fieldMap map[string]string, policyMap map[string]map[string]map[string]any, entitlementIdMap map[string]string, typename string, refid string) map[string]interface{} {
 	for key, value := range jsonMap {
 		if typename != "" {
 			normalizedType := normalizeTypeName(typename)
+			var refIdField string
 			if normalizeTypeName(typename) == "Account" {
-				refIdField := utility.ResolveRefIdNameFallback(normalizedType+"."+key, entitlementIdMap)
+				if _, ok := policyMap[normalizedType][key]; ok {
+					refIdField = policyMap[normalizedType][key]["entitlementIdentifier"].(string)
+				} else {
+					refIdField = utility.ResolveRefIdNameFallback(normalizedType)
+				}
 				if tempRefid := findReferenceID(jsonMap, refIdField); tempRefid != "" {
 					refid = tempRefid
 				}
@@ -255,14 +260,14 @@ func traverseAndRedactCopy(jsonMap map[string]interface{}, fieldMap map[string]s
 				}
 			}
 			if fieldsMap, exists := policyMap[normalizedType]; exists {
-				if engineResponse, fieldExists := fieldsMap[key]; fieldExists {
+				if engineResponse, fieldExists := fieldsMap[key]["engineresponse"].(map[string]string); fieldExists {
 					fmt.Println(reflect.TypeOf(value))
 					switch accounValue := value.(type) {
 					case []interface{}:
 						var filtered []interface{}
 						for _, obj := range accounValue {
 							if m, ok := obj.(map[string]interface{}); ok {
-								refIdField := utility.ResolveRefIdNameFallback(normalizedType+"."+key, entitlementIdMap)
+								refIdField = policyMap[normalizedType][key]["entitlementIdentifier"].(string)
 								refid = findReferenceID(m, refIdField)
 								//refid, _ := m["accountReferenceId"].(string)
 								if processEngineResonse(engineResponse, refid) {
@@ -329,7 +334,7 @@ func ParseGraphQLQueryCopy(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Error parsing JSON body: "+err.Error())
 		return
 	}
-	policyMap := make(map[string]map[string]map[string]string)
+	policyMap := make(map[string]map[string]map[string]any)
 
 	for _, policy := range policiesList {
 		parts := splitPoliciesAndRemoveSpace(policy["key"].(string), ".")
@@ -354,20 +359,18 @@ func ParseGraphQLQueryCopy(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if _, ok := policyMap[typename]; !ok {
-			policyMap[typename] = make(map[string]map[string]string)
+			policyMap[typename] = make(map[string]map[string]any)
 		}
 		node, ok := policy["node"].(map[string]any)
+		var entitlementVal string
 		if !ok {
-			respondWithError(w, http.StatusBadRequest, "No node found in policy")
-			return
+			entitlementVal = utility.ResolveRefIdNameFallback(typename)
+		} else {
+			entitlementVal = node["entitlementIdentifier"].(string)
 		}
-		entitlementVal, ok := node["entitlementIdentifier"].(string)
-		if !ok {
-			respondWithError(w, http.StatusBadRequest, "No entitlementIdentifier found in node")
-			return
-		}
-		policyMap[typename]["entitlementIdentifier"] = map[string]string{"value": entitlementVal}
-		policyMap[typename][field] = engineResponse
+		policyMap[typename][field] = make(map[string]any)
+		policyMap[typename][field]["engineresponse"] = engineResponse
+		policyMap[typename][field]["entitlementIdentifier"] = entitlementVal
 	}
 
 	if len(policyMap) != 0 {
@@ -422,8 +425,7 @@ func GetApolloPoliciesRequiredHeders() ([]map[string]interface{}, error) {
 	"context": {
 		"entries": {
 		"apollo_authorization::policies::required": {
-			"{ \"key\": \"Query.accounts\", \"arguments\": { \"entitlementIdentifier\": \"accountReferenceId\" }, \"node\": { \"entitlementIdentifier\": \"accountReferenceId\" } }": null,
-			"{ \"key\": \"Query.accountFF\", \"arguments\": { \"entitlementIdentifier\": \"accountReferenceId\" }, \"node\": { \"entitlementIdentifier\": \"accountReferenceId\" } }": null
+			"{ \"key\": \"Account.balance\"}": null
 		},
 		"operation_kind": "query",
 		"operation_name": "AccountQuery"
